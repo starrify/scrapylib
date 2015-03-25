@@ -43,6 +43,8 @@ The next keys can be defined in a Request meta in order to control the behavior
 of the HCF middleware:
 
     use_hcf - If set to True the request will be stored in the HCF.
+    hcf_dont_filter - Indicates that this request should not be filtered by
+                      the middleware. Default to `False`.
     hcf_params - Dictionary of parameters to be stored in the HCF with the request
                  fingerprint
 
@@ -98,6 +100,7 @@ class HcfMiddleware(object):
         self.fclient = self.project.frontier
 
         self.new_links = defaultdict(set)
+        self.new_links_count = defaultdict(int)
         self.batch_ids = []
 
         crawler.signals.connect(self.close_spider, signals.spider_closed)
@@ -156,7 +159,13 @@ class HcfMiddleware(object):
                 if request.meta.get('use_hcf', False):
                     if request.method == 'GET':  # XXX: Only GET support for now.
                         slot = slot_callback(request)
-                        if not request.url in self.new_links[slot]:
+                        filtered = False
+                        if not request.meta.get('hcf_dont_filter', False):
+                            if request.url not in self.new_links[slot]:
+                                self.new_links[slot].add(request.url)
+                            else:
+                                filtered = True
+                        if not filtered:
                             hcf_params = request.meta.get('hcf_params')
                             fp = {'fp': request.url}
                             if hcf_params:
@@ -164,7 +173,7 @@ class HcfMiddleware(object):
                             # Save the new links as soon as possible using
                             # the batch uploader
                             self.fclient.add(self.hs_frontier, slot, [fp])
-                            self.new_links[slot].add(request.url)
+                            self.new_links_count[slot] += 1
                     else:
                         self._msg("'use_hcf' meta key is not supported for non GET requests (%s)" % request.url,
                                   log.ERROR)
@@ -180,8 +189,11 @@ class HcfMiddleware(object):
         # were processed and it is better not to delete them from the frontier
         # (so they will be picked by another process).
         if reason == 'finished':
-            self._save_new_links_count()
             self._delete_processed_ids()
+
+        # Log number of links stored
+        for slot, count in self.new_links_count.items():
+            self._msg('Stored %d new links in slot(%s)' % (count, slot))
 
         # Close the frontier client in order to make sure that all the new links
         # are stored.
@@ -210,12 +222,6 @@ class HcfMiddleware(object):
                 break
         self._msg('Read %d new batches from slot(%s)' % (num_batches, self.hs_consume_from_slot))
         self._msg('Read %d new links from slot(%s)' % (num_links, self.hs_consume_from_slot))
-
-    def _save_new_links_count(self):
-        """ Save the new extracted links into the HCF."""
-        for slot, new_links in self.new_links.items():
-            self._msg('Stored %d new links in slot(%s)' % (len(new_links), slot))
-        self.new_links = defaultdict(set)
 
     def _delete_processed_ids(self):
         """ Delete in the HCF the ids of the processed batches."""
