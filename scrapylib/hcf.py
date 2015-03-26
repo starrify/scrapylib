@@ -201,7 +201,8 @@ class HcfMiddleware(object):
         """ Get a new batch of links from the HCF."""
         num_batches = 0
         num_links = 0
-        for num_batches, batch in enumerate(self.fclient.read(self.hs_frontier, self.hs_consume_from_slot), 1):
+        for batch in self.fclient.read(self.hs_frontier, self.hs_consume_from_slot, mincount=self.hs_max_links):
+            num_batches += 1
             for fingerprint, data in batch['requests']:
                 num_links += 1
                 yield Request(url=fingerprint, meta={'hcf_params': {'qdata': data}})
