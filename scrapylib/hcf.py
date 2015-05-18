@@ -29,6 +29,9 @@ The next optional settings can be defined:
 
     HS_MAX_LINKS - Number of links to be read from the HCF, the default is 1000.
 
+    HS_MAX_RETRIES - Number of retries to be performed to the hubstorage
+                     server. The default is 8.
+
     HS_START_JOB_ENABLED - Enable whether to start a new job when the spider
                            finishes. The default is False
 
@@ -73,6 +76,7 @@ from scrapy.http import Request
 from hubstorage import HubstorageClient
 
 DEFAULT_MAX_LINKS = 1000
+DEFAULT_MAX_RETRIES = 8
 DEFAULT_HS_NUMBER_OF_SLOTS = 8
 
 
@@ -87,13 +91,14 @@ class HcfMiddleware(object):
         self.hs_consume_from_slot = self._get_config(settings, "HS_CONSUME_FROM_SLOT")
         self.hs_number_of_slots = settings.getint("HS_NUMBER_OF_SLOTS", DEFAULT_HS_NUMBER_OF_SLOTS)
         self.hs_max_links = settings.getint("HS_MAX_LINKS", DEFAULT_MAX_LINKS)
+        self.hs_max_retries = settings.getint("HS_MAX_RETRIES", DEFAULT_MAX_RETRIES)
         self.hs_start_job_enabled = settings.getbool("HS_START_JOB_ENABLED", False)
         self.hs_start_job_on_reason = settings.getlist("HS_START_JOB_ON_REASON", ['finished'])
 
         conn = Connection(self.hs_auth)
         self.panel_project = conn[self.hs_projectid]
 
-        self.hsclient = HubstorageClient(auth=self.hs_auth, endpoint=self.hs_endpoint)
+        self.hsclient = HubstorageClient(auth=self.hs_auth, endpoint=self.hs_endpoint, max_retries=self.hs_max_retries)
         self.project = self.hsclient.get_project(self.hs_projectid)
         self.fclient = self.project.frontier
 
